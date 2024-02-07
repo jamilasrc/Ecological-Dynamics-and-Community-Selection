@@ -611,7 +611,7 @@ class community(community_parameters):
            
            self.call_func(call_gLV_info,[lineage,init_cond_func_name])
            
-       self.no_unique_compositions = unique_compositions(self)
+       self.no_unique_compositions = self.unique_compositions()
        
    def repeat_simulations_supply_initcond(self,
                                           lineages,
@@ -799,140 +799,50 @@ def gLV_ode(t,spec,growth_r,interact_mat,dispersal):
     
     return dSdt
 
-################# Lyapunov exponenets ################
+####################### Random Global Functions ###############
 
-
-########################################
-
-def species_diversity(extinct_thresh,ind,simulations):
+def generate_distribution(mu_maxmin,std_maxmin,mu_step=0.1,std_step=0.05):
     
     '''
     
-    Calculate species diversity at a given time.
-    
-    Parameters
-    ----------
-    extinct_thresh : float
-        Species extinction threshold.
-    ind : int
-        Index of time point to calculate species diversity (to find species populations at the right time)
-    simulations : OdeResult object of scipy.integrate.solve_ivp module
-        (Deterministic) Solution to gLV ODE system.
-
-    Returns
-    -------
-    Species present, species diversity (no. species), species abundances
-
-    '''
-    
-    # find species that aren't extinct aka species with abundances greater than the extinction threshold.
-    present_species = np.where(simulations.y[:,ind] > extinct_thresh)
-    
-    # calculate species diversity (aka no. of species that aren't extinct, 
-    #   or the length of the array of present species abundances)
-    diversity = present_species[0].shape[0]
-     
-    return [present_species[0],diversity]
-    
-def unique_compositions(obj):
-    
-    '''
-    
-    Calculate the number of unique final species compositions in a community.
-    
-    Parameters
-    ----------
-    obj : community object of __main__ module
-    
-    Returns
-    -------
-    no_uniq_comp : int
-        Number of unique compositions
-    
-    '''
-    
-    all_compositions = np.vstack(list(obj.final_composition.values()))
-    no_uniq_comp = len(np.unique(all_compositions,axis=0))
-    
-    return no_uniq_comp
-
-def detect_fluctuations_timeframe(fluctuation_thresh,timeframe,simulations,extinct_thresh=1e-4):
-    
-    '''
-    
-    Detect whether a community exhibts fluctuating dynamics within a given timeframe.
 
     Parameters
     ----------
-    fluctuation_thresh : float
-        The threshold for the average coefficient of variation, 
-            which determines whether or not a community is fluctuating.
-    timeframe : list of ints, length 2.
-        The start and end time to detect fluctuations in.
-    simulations : OdeResult object of scipy.integrate.solve_ivp module
-        (Deterministic) Solution to gLV ODE system.
-    extinct_thresh : float
-        Species extinction threshold.
+    mu_maxmin : TYPE
+        DESCRIPTION.
+    std_maxmin : TYPE
+        DESCRIPTION.
+    mu_step : TYPE, optional
+        DESCRIPTION. The default is 0.1.
+    std_step : TYPE, optional
+        DESCRIPTION. The default is 0.05.
 
     Returns
     -------
-    fluctuations_truefalse : TYPE
+    distributions : TYPE
         DESCRIPTION.
 
     '''
     
-    # deepy copy object attribute so the class object doesn't get mutated
-    simulations_copy = deepcopy(simulations)
-    simulations_copy.y = simulations_copy.y[np.where(simulations_copy.y[:,-1] > extinct_thresh)[0],:]
+    mu_min = mu_maxmin[0]
+    mu_max = mu_maxmin[1]
     
-    # find the indices of the nearest time to the times supplied in timeframe
-    indices = find_nearest_in_timeframe(timeframe,simulations_copy.t)    
+    std_min = std_maxmin[0]
+    std_max = std_maxmin[1]
     
-    # detect if a community exhibits fluctuating species dynamics
-    fluctuations_truefalse = detect_fluctuations(fluctuation_thresh,indices,simulations_copy.y)
-    
-    return fluctuations_truefalse
+    mu_range = np.arange(mu_min,mu_max,mu_step)
+    std_range = np.arange(std_min,std_max,std_step)
 
-def detect_fluctuations(fluctuation_thresh,indices,pop_dyn):
+    mu_rep = np.repeat(mu_range,len(std_range))
+    std_rep = np.tile(std_range,len(mu_range))
     
-    '''
+    distributions = np.vstack((mu_rep,std_rep)).T
+    distributions = distributions.tolist()
     
-    Detect whether a community is fluctuating or not.
-    Based on the function from Hu et al. (2022).
-    
-    The average coefficient of variation for each species is calculated 
-        (standard deviation in species dynamics weighted by average species 
-         abundance), then the proportion of the community exhibiting fluctuating dynamics is calculated. 
+    return distributions
 
-    Parameters
-    ----------
-    fluctuation_thresh : float
-        The threshold for the average coefficient of variation, 
-            which determines whether or not a community is fluctuating.
-    indices : int
-        Index of nearest times to the timeframe supplied.
-    pop_dyn : .y from OdeResult object of scipy.integrate.solve_ivp module
-        Population dynamics ONLY from (deterministic) solution to gLV ODE system.
-    
-    Returns
-    -------
-    Boolean
-        True = the community is fluctuating, False = the community is at a fixed point.
 
-    '''
     
-    # calculate the standard deviation in species population dynamics, 
-    #   normalised by average species abundance, for all species.
-    average_variation_coeff_per_spec = np.std(pop_dyn[:,indices[0]:indices[1]],axis=1)/np.mean(pop_dyn[:,indices[0]:indices[1]],axis=1)
-    
-    # find the species with the average CV greater than the flucutation threshold
-    species_fluctutating = np.where(average_variation_coeff_per_spec > fluctuation_thresh)[0]
-    
-    # find the proportion of species with fluctuating dynamics in the whole community.
-    fluct_prop = len(species_fluctutating)/pop_dyn.shape[0]
-    
-    return fluct_prop
-
 def find_nearest_in_timeframe(timeframe,simulation_times):
     
     '''

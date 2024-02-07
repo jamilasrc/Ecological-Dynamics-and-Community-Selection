@@ -4,8 +4,11 @@ Created on Sat Feb  3 17:13:50 2024
 
 @author: Jamila
 """
+##############################
 
-############
+# Jamila: for console - cd "Documents/PhD for github/Ecological dynamics and community selection"
+
+#########################
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -16,6 +19,7 @@ from community_dynamics_and_properties import *
 from community_selection_protocols_and_analysis import *
 
 ###########################
+
 
 interact_dist = {"mu_a":0.9,"sigma_a":0.05}
 
