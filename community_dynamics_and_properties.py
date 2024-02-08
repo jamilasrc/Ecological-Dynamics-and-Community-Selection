@@ -801,6 +801,27 @@ def gLV_ode(t,spec,growth_r,interact_mat,dispersal):
 
 ####################### Random Global Functions ###############
 
+def identify_ecological_dynamics(data,le_mean_col,le_sigma_col,
+                                 predicted_dynamics_col="Predicted dynamics"):
+    
+    stable_boundary = -1
+    chaos_oscillations_boundary = np.round(0.1*np.sqrt(50),1)
+    divergence_threshold = 15
+    
+    eco_dynamics = ["stable","oscillations","chaotic-like"]
+    eco_dyn_conditions = [(data[le_mean_col] <= stable_boundary),
+                          (data[le_mean_col] > stable_boundary) & \
+                          (np.round(data[le_sigma_col],1) < chaos_oscillations_boundary),
+                          (data[le_mean_col] > stable_boundary) & \
+                          (np.round(data[le_sigma_col],1) >= chaos_oscillations_boundary)]
+        
+    data[predicted_dynamics_col] = np.select(eco_dyn_conditions,eco_dynamics)
+    
+    data.drop(data[data[le_mean_col] >= divergence_threshold].index,inplace=True)
+
+    return data
+
+
 def generate_distribution(mu_maxmin,std_maxmin,mu_step=0.1,std_step=0.05):
     
     '''
