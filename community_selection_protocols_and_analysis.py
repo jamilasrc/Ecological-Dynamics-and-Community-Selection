@@ -343,9 +343,9 @@ def propogate_adult_no_replacement(community_to_propogate,
 
 ############################ Community Properties ###############################     
 
-def heritability_during_selection(community_functions,no_communities):
+def heritability_during_selection(community_functions,no_cycles):
     
-    #breakpoint()
+    no_communities = np.round(community_functions.shape[0]/no_cycles).astype(int)
     
     parent_offspring_array = \
         sliding_window_view(community_functions, no_communities*2)[::no_communities,:]

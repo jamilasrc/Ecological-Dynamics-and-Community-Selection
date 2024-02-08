@@ -760,7 +760,7 @@ class community(community_parameters):
            initial_conditions_sep = species_abundances_end + \
                (separation/separation_dt)*(species_abundances_end_sep-species_abundances_end)
                
-       max_lyapunov_exponent = mean_stderror(np.array(log_d1d0_list))
+       max_lyapunov_exponent = mean_std_deviation(np.array(log_d1d0_list))
        
        return max_lyapunov_exponent
            
@@ -923,3 +923,26 @@ def mean_stderror(data):
     std_error = stats.sem(data)
     
     return [mean, std_error]
+
+def mean_std_deviation(data):
+    
+    '''
+    
+    Calculate the mean and standard error of a dataset.
+    
+    Parameters
+    ----------
+    data : np.array
+        Dataset.
+    Returns
+    -------
+    [mean, std_error] : list of floats
+        The mean and standard error of data.
+    
+    '''
+    
+    mean = np.mean(data)
+    
+    std_deviation = np.std(data)
+    
+    return [mean, std_deviation]
