@@ -23,6 +23,7 @@ Created on Sat Feb  3 17:13:48 2024
 import numpy as np
 from scipy.integrate import solve_ivp
 from scipy import stats
+from scipy.signal import find_peaks
 from copy import deepcopy
 from matplotlib import pyplot as plt
 
@@ -744,7 +745,7 @@ class community(community_parameters):
         
         self.lyapunov_exponents[dict_key] = self.gLV_lyapunov_exponent(dict_key)
   
-   def gLV_lyapunov_exponent(self,dict_key,n=10,dt=7000,separation=1e-2,extinct_thresh=1e-4):
+   def gLV_lyapunov_exponent(self,dict_key,n=10,dt=10000,separation=1e-2,extinct_thresh=1e-4):
        
        log_d1d0_list = []
        
@@ -982,6 +983,42 @@ def mean_std_deviation(data):
     
     return [mean, std_deviation]
 
+def gLV_lyapunov_exponent_global(community_parms_object,gLV_object,
+                                 n=10,dt=10000,separation=1e-2,extinct_thresh=1e-4):
+    
+    log_d1d0_list = []
+    
+    pop_dyn = gLV_object.ODE_sol.y
+    initial_conditions = pop_dyn[:,np.round(pop_dyn.shape[1]/2,0).astype(int)]
+    
+    initial_conditions_no_sep = deepcopy(initial_conditions)
+    
+    initial_conditions_sep = deepcopy(initial_conditions)
+    species_to_perturbate = np.where(initial_conditions_sep > extinct_thresh)[0][0]
+    initial_conditions_sep[species_to_perturbate] += separation
+     
+    for step in range(n):
+         
+        gLV_res = gLV(community_parms_object,None,initial_conditions_no_sep,t_end=dt)
+        gLV_res_separation = gLV(community_parms_object,None,initial_conditions_sep,t_end=dt)
+        
+        species_abundances_end = gLV_res.ODE_sol.y[:,-1]
+        species_abundances_end_sep = gLV_res_separation.ODE_sol.y[:,-1]
+        
+        separation_dt = np.sqrt(np.sum((species_abundances_end - species_abundances_end_sep)**2))
+        
+        log_d1d0 = np.log(np.abs(separation_dt/separation))
+        log_d1d0_list.append(log_d1d0)
+        
+        initial_conditions_no_sep = species_abundances_end
+        initial_conditions_sep = species_abundances_end + \
+            (separation/separation_dt)*(species_abundances_end_sep-species_abundances_end)
+            
+    max_lyapunov_exponent = mean_std_deviation(np.array(log_d1d0_list))
+    
+    return max_lyapunov_exponent
+
+
 ####################################
 
 interact_dist = {"mu_a":0.9,"sigma_a":0.05}
@@ -989,6 +1026,10 @@ chaotic_interactions = np.load("chaos_09_005.npy")
 
 no_species = 50
 lineages = np.arange(1)
+
+############### Find out if community dynamics are robust to ODE solver #############
+
+# method = 'LSODA' rather than 'RK45'.
 
 community_dynamics = community(no_species,
                                 "fixed", None,
@@ -999,3 +1040,31 @@ community_dynamics.repeat_lyapunov(lineages)
 
 plt.plot(community_dynamics.ODE_sols['lineage 0'].t,community_dynamics.ODE_sols['lineage 0'].y.T)
 community_dynamics.lyapunov_exponents
+
+################### Find out if chaotic-communities have true periodicity ########
+
+community_dynamics_long = community_parameters(no_species,
+                                "fixed", None,
+                                None, interact_dist, usersupplied_interactmat=chaotic_interactions,
+                                usersupplied_growth=None,dispersal=1e-8)
+long_simulations = gLV(community_dynamics_long, "Mallmin",t_end=100000)
+
+plt.plot(long_simulations.ODE_sol.t,long_simulations.ODE_sol.y.T) # periodicity roughly every 10000 time steps
+
+species_of_interest = np.where(np.any(long_simulations.ODE_sol.y[:,np.where(long_simulations.ODE_sol.t > 10000)[0]] > 1e-4, axis = 1) == True)[0][0]
+peaks, _ = find_peaks(long_simulations.ODE_sol.y[species_of_interest,:])
+uniq_peaks, indices, counts = np.unique(np.round(long_simulations.ODE_sol.y[species_of_interest,peaks],3),
+                                return_inverse=True,return_counts=True)
+index_many_matching_peaks = np.where(indices == np.argmax(counts))
+
+plt.plot(long_simulations.ODE_sol.t,long_simulations.ODE_sol.y[species_of_interest,:].T)
+plt.plot(long_simulations.ODE_sol.t[peaks],
+         long_simulations.ODE_sol.y[species_of_interest,peaks].T,'x')
+plt.plot(long_simulations.ODE_sol.t[peaks[index_many_matching_peaks]],
+         long_simulations.ODE_sol.y[species_of_interest,peaks[index_many_matching_peaks]].T,'o')
+
+differences_between_peaks = np.diff(long_simulations.ODE_sol.t[peaks[index_many_matching_peaks]])
+average_period = np.sum(differences_between_peaks[1:-1])/int(len(differences_between_peaks[1:-1])/2)
+
+le_lineage = gLV_lyapunov_exponent_global(community_dynamics_long,long_simulations,dt=average_period)
+# still labelled as chaotic
