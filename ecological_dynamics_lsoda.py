@@ -1019,6 +1019,22 @@ def gLV_lyapunov_exponent_global(community_parms_object,gLV_object,
     return max_lyapunov_exponent
 
 
+def find_period(ode_object):
+    
+    species_of_interest = np.where(np.any(ode_object.y[:,np.where(ode_object.t > 10000)[0]] > 1e-4,
+                                          axis = 1) == True)[0][0]
+    
+    peaks, _ = find_peaks(ode_object.y[species_of_interest,:])
+    
+    uniq_peaks, indices, counts = np.unique(np.round(ode_object.y[species_of_interest,peaks],3),
+                                    return_inverse=True,return_counts=True)
+
+
+
+
+
+
+
 ####################################
 
 interact_dist = {"mu_a":0.9,"sigma_a":0.05}
