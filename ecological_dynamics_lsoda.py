@@ -24,6 +24,8 @@ import numpy as np
 from scipy.integrate import solve_ivp
 from scipy import stats
 from scipy.signal import find_peaks
+from scipy.fft import rfft
+from scipy.fft import rfftfreq
 from copy import deepcopy
 from matplotlib import pyplot as plt
 
@@ -62,7 +64,7 @@ class community_parameters:
             growth_func = {"fixed": self.growth_rates_fixed,
                            "normal": self.growth_rates_norm}[growth_func_name]
             
-            self.growth_rates = self.call_func_noarg(growth_func)
+            self.growth_rates = growth_func()
             
         else:
             
@@ -80,7 +82,7 @@ class community_parameters:
                                 "random normalised by K": 
                                     self.random_interaction_matrix_norm_by_K}[interact_func_name]
             
-            self.interaction_matrix = self.call_func_noarg(interaction_func)
+            self.interaction_matrix = interaction_func()
             
         else: 
             
@@ -92,10 +94,6 @@ class community_parameters:
         
 ########### Class methods #################
 
-    def call_func_noarg(self,func):
-        
-        return func()
-    
     ###### Growth Rates ###########
     
     def growth_rates_norm(self):
@@ -279,9 +277,9 @@ class gLV:
     
     def __init__(self,
                  community_parameters_object,
-                 init_cond_func_name,
-                 usersupplied_init_cond=None,
-                 t_end = 7000): 
+                 t_end,
+                 init_cond_func_name=None,
+                 usersupplied_init_cond=None): 
         
         self.growth_rates = community_parameters_object.growth_rates
         self.interaction_matrix = community_parameters_object.interaction_matrix
@@ -296,9 +294,9 @@ class gLV:
                               "Mallmin":{"func":self.initial_abundances_mallmin,
                                          "args":[community_parameters_object.no_species
                                                  ,community_parameters_object.dispersal]}}[init_cond_func_name]
-            self.initial_abundances = self.initial_abundance(init_cond_func_info["func"],
-                                                             init_cond_func_info["args"])
             
+            self.initial_abundances = init_cond_func_info['func'](*init_cond_func_info['args'])
+              
         else: 
             
             self.initial_abundances = usersupplied_init_cond
@@ -306,16 +304,7 @@ class gLV:
         self.ODE_sol = self.gLV_simulation(dispersal,t_end)
       
     ########## Functions for generating initial conditions ############
-    
-    def initial_abundance(self,init_cond_func,init_cond_args):
-        
-        '''
-        
-        Instruct class on which class method for generating initial conditions should be called.
-        
-        '''
-        return init_cond_func(*init_cond_args)
-    
+      
     def initial_abundances_mallmin(self,no_species,dispersal):
         
         '''
@@ -549,6 +538,8 @@ class gLV:
 
 ################
 
+################
+
 class community(community_parameters):
     
    def __init__(self,
@@ -575,96 +566,88 @@ class community(community_parameters):
        self.diversity = {}
        
    ########################
-   
-   def call_func(self,func_name,func_args):
-
-        return func_name(*func_args)    
       
    def simulate_community(self,
+                          t_end,
                           func_name,lineages,
-                          init_cond_func_name=None,array_of_init_conds=None):
+                          init_cond_func_name=None,array_of_init_conds=None,
+                          with_community_function=False):
        
        repeat_simulations_info = {"Default":{"func":self.repeat_simulations,
-                                             "args":[lineages,init_cond_func_name]},
+                                             "args":[lineages,t_end,
+                                                     init_cond_func_name,with_community_function]},
                                   "Supply initial conditions":{"func":self.repeat_simulations_supply_initcond,
-                                                               "args":[lineages,
-                                                               array_of_init_conds]}}[func_name]
+                                                               "args":[lineages,t_end,
+                                                               array_of_init_conds,with_community_function]}}[func_name]
        
-       self.call_func(repeat_simulations_info["func"],repeat_simulations_info["args"])
+       repeat_simulations_info["func"](*repeat_simulations_info["args"])
+            
+   def repeat_simulations(self,lineages,t_end,init_cond_func_name,with_community_function):
+       
+       '''
+       
+       Run repeat gLV simulations from different initial conditions.
+       
+       '''    
+       
+       if with_community_function == True:
+           
+           self.community_functions = {}
+           
+           for lineage in lineages:
+               
+               gLV_res = gLV(self,t_end,init_cond_func_name)
+               
+               gLV_res.identify_community_properties()
+               self.assign_gLV_attributes(gLV_res, lineage)
+               
+               gLV_res.call_community_function(self.species_contribute_community_function)
+               self.assign_community_function(gLV_res, lineage)
+               
+       else:
+           
+           for lineage in lineages:
+               
+               gLV_res = gLV(self,t_end,init_cond_func_name)
+               
+               gLV_res.identify_community_properties()
+               self.assign_gLV_attributes(gLV_res, lineage)
+           
+       self.no_unique_compositions = self.unique_compositions()
+       
+   def repeat_simulations_supply_initcond(self,lineages,t_end,array_of_init_conds,
+                                          with_community_function):
     
-   def simulate_community_with_community_function(self,
-                                                  func_name,lineages,
-                                                  init_cond_func_name=None,array_of_init_conds=None):
+       '''
        
-       self.community_functions = {}
+       Run repeat gLV simulations from different initial conditions.
        
-       repeat_simulations_info = {"Default":{"func":self.repeat_simulations,
-                                             "args":[lineages,init_cond_func_name,
-                                                     "call_gLV_with_community_function"]},
-                                  "Supply initial conditions":{"func":self.repeat_simulations_supply_initcond,
-                                                               "args":[lineages,
-                                                               array_of_init_conds,
-                                                               "call_gLV_with_community_function"]}}[func_name]
+       '''   
        
-       self.call_func(repeat_simulations_info["func"],repeat_simulations_info["args"])
+       if with_community_function == True:
+           
+           self.community_functions = {}
+      
+           for count, lineage in enumerate(lineages):
+               
+             gLV_res = gLV(self,t_end,usersupplied_init_cond=array_of_init_conds[:,count])
+             
+             gLV_res.identify_community_properties()
+             self.assign_gLV_attributes(gLV_res, lineage)
+             
+             gLV_res.call_community_function(self.species_contribute_community_function)
+             self.assign_community_function(gLV_res, lineage)
         
-   def repeat_simulations(self,
-                          lineages,
-                          init_cond_func_name,
-                          call_gLV_func="call_gLV"):
-       
-       '''
-       
-       Run repeat gLV simulations from different initial conditions.
-       
-       '''
-       
-       call_gLV_info = {"call_gLV":self.call_gLV,
-                        "call_gLV_with_community_function":self.call_gLV_with_community_function}[call_gLV_func]
-       
-       for lineage in lineages:
+       else:
            
-           self.call_func(call_gLV_info,[lineage,init_cond_func_name])
+           gLV_res = gLV(self,t_end,usersupplied_init_cond=array_of_init_conds[:,count])
            
+           gLV_res.identify_community_properties()
+           self.assign_gLV_attributes(gLV_res, lineage)
+               
        self.no_unique_compositions = self.unique_compositions()
        
-   def repeat_simulations_supply_initcond(self,
-                                          lineages,
-                                          array_of_init_conds,
-                                          call_gLV_func="call_gLV"):
-    
-       '''
-       
-       Run repeat gLV simulations from different initial conditions.
-       
-       '''
-       
-       call_gLV_info = {"call_gLV":self.call_gLV,
-                        "call_gLV_with_community_function":self.call_gLV_with_community_function}[call_gLV_func]
-       
-       for count, lineage in enumerate(lineages):
-           
-         self.call_func(call_gLV_info,[lineage,None,array_of_init_conds[:,count]])
-           
-       self.no_unique_compositions = self.unique_compositions()
-       
-   def call_gLV(self,
-                lineage,
-                init_cond_func_name=None,
-                usersupplied_init_cond=None):
-       
-       '''
-       
-       Generate initial species abundances. run gLV, and extract community properties.
-       
-       '''
-       
-       ########## run gLV from initial conditions #######
-       
-       gLV_res = gLV(self,init_cond_func_name,usersupplied_init_cond)
-       gLV_res.identify_community_properties()
-       
-       ############ Assign values to relevent class attributes ##############
+   def assign_gLV_attributes(self,gLV_res,lineage):
        
        dict_key = "lineage " + str(lineage)
       
@@ -674,36 +657,12 @@ class community(community_parameters):
        self.final_composition[dict_key] = gLV_res.final_composition
        self.diversity[dict_key] = gLV_res.final_diversity
        self.fluctuations[dict_key] = gLV_res.fluctuations
-           
-   def call_gLV_with_community_function(self,
-                                        lineage,
-                                        init_cond_func_name=None,
-                                        usersupplied_init_cond=None):
-       
-       '''
-       
-       Generate initial species abundances. run gLV, and extract community properties.
-       Includes community function
-       
-       '''
-       
-       ########## run gLV from initial conditions #######
-        
-       gLV_res = gLV(self,init_cond_func_name,usersupplied_init_cond)
-       gLV_res.identify_community_properties()
-       gLV_res.call_community_function(self.species_contribute_community_function)
-       
-       ############ Assign values to relevent class attributes ##############
-       
-       dict_key = "lineage " + str(lineage)
       
-       self.initial_abundances[dict_key] = gLV_res.initial_abundances
-       self.ODE_sols[dict_key] = gLV_res.ODE_sol
-       
-       self.final_composition[dict_key] = gLV_res.final_composition
-       self.diversity[dict_key] = gLV_res.final_diversity
-       self.fluctuations[dict_key] = gLV_res.fluctuations
-       
+             
+   def assign_community_function(self,gLV_res,lineage):
+             
+       dict_key = "lineage " + str(lineage)
+        
        self.community_functions[dict_key] = gLV_res.community_function
        
    def unique_compositions(self):
@@ -729,7 +688,8 @@ class community(community_parameters):
        return no_uniq_comp
     
    def repeat_lyapunov(self,
-                       lineages):
+                       lineages,
+                       n=10,dt=10000,separation=1e-2,extinct_thresh=1e-4):
  
     '''
     
@@ -743,9 +703,11 @@ class community(community_parameters):
         
         dict_key = "lineage " + str(lineage)
         
-        self.lyapunov_exponents[dict_key] = self.gLV_lyapunov_exponent(dict_key)
+        self.lyapunov_exponents[dict_key] = self.gLV_lyapunov_exponent(dict_key,
+                                                                       n,dt,separation,
+                                                                       extinct_thresh)
   
-   def gLV_lyapunov_exponent(self,dict_key,n=10,dt=10000,separation=1e-2,extinct_thresh=1e-4):
+   def gLV_lyapunov_exponent(self,dict_key,n,dt,separation,extinct_thresh):
        
        log_d1d0_list = []
        
@@ -760,8 +722,8 @@ class community(community_parameters):
         
        for step in range(n):
             
-           gLV_res = gLV(self,None,initial_conditions_no_sep,t_end=dt)
-           gLV_res_separation = gLV(self,None,initial_conditions_sep,t_end=dt)
+           gLV_res = gLV(self,dt,usersupplied_init_cond=initial_conditions_no_sep)
+           gLV_res_separation = gLV(self,dt,usersupplied_init_cond=initial_conditions_sep)
            
            species_abundances_end = gLV_res.ODE_sol.y[:,-1]
            species_abundances_end_sep = gLV_res_separation.ODE_sol.y[:,-1]
@@ -778,8 +740,7 @@ class community(community_parameters):
        max_lyapunov_exponent = mean_std_deviation(np.array(log_d1d0_list))
        
        return max_lyapunov_exponent
-           
-       
+                  
 ####################### Functions #####################
 
 ############################ gLV simulations ##################
@@ -836,7 +797,6 @@ def identify_ecological_dynamics(data,le_mean_col,le_sigma_col,
 
     return data
 
-
 def generate_distribution(mu_maxmin,std_maxmin,mu_step=0.1,std_step=0.05):
     
     '''
@@ -876,9 +836,7 @@ def generate_distribution(mu_maxmin,std_maxmin,mu_step=0.1,std_step=0.05):
     distributions = distributions.tolist()
     
     return distributions
-
-
-    
+   
 def find_nearest_in_timeframe(timeframe,simulation_times):
     
     '''
@@ -1019,16 +977,41 @@ def gLV_lyapunov_exponent_global(community_parms_object,gLV_object,
     return max_lyapunov_exponent
 
 
-def find_period(ode_object):
+def find_period_ode_system(ode_object,extinct_thresh=1e-4,dt=10):
     
-    species_of_interest = np.where(np.any(ode_object.y[:,np.where(ode_object.t > 10000)[0]] > 1e-4,
-                                          axis = 1) == True)[0][0]
+    t_discretised = np.arange(0,ode_object.t[-1],dt)
+   
+    extant_species = np.where(np.any(ode_object.y[:,np.where(ode_object.t > 10000)[0]] > 1e-4,
+                                          axis = 1) == True)[0]
     
-    peaks, _ = find_peaks(ode_object.y[species_of_interest,:])
-    
-    uniq_peaks, indices, counts = np.unique(np.round(ode_object.y[species_of_interest,peaks],3),
-                                    return_inverse=True,return_counts=True)
+    def find_max_period_species(ode_object,t_discretised,dt,species):
+        
+        interpolated_spec = np.interp(t_discretised,ode_object.t,ode_object.y[species,:])
 
+        fourier_spec = rfft(interpolated_spec)
+        normalised_fourier_spec = 2*np.abs(fourier_spec)/len(interpolated_spec)
+
+        period = 1/rfftfreq(len(interpolated_spec), d=dt)
+        #period_max_wave = period[np.argmax(normalised_fourier_spec[1:])+1]
+        
+        #return period_max_wave
+        
+        peak_ind, _ = find_peaks(normalised_fourier_spec[1:],height=0.01)
+        
+        try:
+            
+            max_period = period[peak_ind[0]+1]
+            
+        except IndexError:
+            
+            max_period = np.nan
+        
+        return max_period
+
+    periods = [find_max_period_species(ode_object,t_discretised,dt,species) for species in extant_species]
+    
+    return periods
+    
 
 
 
@@ -1050,7 +1033,7 @@ lineages = np.arange(1)
 community_dynamics = community(no_species,
                                 "fixed", None,
                                 None, interact_dist, usersupplied_interactmat=chaotic_interactions)
-community_dynamics.simulate_community("Default",lineages,init_cond_func_name="Mallmin")
+community_dynamics.simulate_community(20000,"Default",lineages,init_cond_func_name="Mallmin")
 
 community_dynamics.repeat_lyapunov(lineages)
 
@@ -1084,3 +1067,23 @@ average_period = np.sum(differences_between_peaks[1:-1])/int(len(differences_bet
 
 le_lineage = gLV_lyapunov_exponent_global(community_dynamics_long,long_simulations,dt=average_period)
 # still labelled as chaotic
+
+####################
+community_dynamics = community(no_species,
+                                "fixed", None,
+                                None, interact_dist, usersupplied_interactmat=chaotic_interactions)
+community_dynamics.simulate_community(100000,"Default",lineages,init_cond_func_name="Mallmin")
+plt.plot(community_dynamics.ODE_sols['lineage 0'].t,community_dynamics.ODE_sols['lineage 0'].y.T)
+community_period = find_period_ode_system(community_dynamics.ODE_sols['lineage 0'])
+
+community_dynamics.repeat_lyapunov(lineages,dt=np.nanmax(np.array(community_period)))
+community_dynamics.lyapunov_exponents
+
+
+
+
+
+
+
+
+
