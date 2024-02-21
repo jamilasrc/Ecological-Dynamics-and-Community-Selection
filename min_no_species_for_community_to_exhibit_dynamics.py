@@ -16,7 +16,7 @@ from community_dynamics_and_properties_v2 import *
 
 ########################################
 
-def min_no_species_for_dynamics(min_species,max_species,no_lineages,t_end,
+def min_no_species_for_dynamics(min_species,max_species,no_communities,no_lineages,t_end,
                                 dynamics_function,**dynamics_function_args):
     
     no_species_range = np.arange(min_species,max_species)
@@ -25,14 +25,14 @@ def min_no_species_for_dynamics(min_species,max_species,no_lineages,t_end,
     
     for no_species in no_species_range:
         
-        no_species_with_dynamics = dynamics_function(lineages,no_species,t_end,
+        no_species_with_dynamics = dynamics_function(lineages,no_species,no_communities,t_end,
                                                      **dynamics_function_args)
         
         if no_species_with_dynamics:
             
-            print('Communities with ',str(no_species),' can exhibit these dynamics.', end='\n')
+            print('Communities with ',str(no_species),' species can exhibit these dynamics.', end='\n')
             
-            return no_species_with_dynamics
+            return [no_species,no_species_with_dynamics]
         
     print('No communities with ',str(min_species),'-',str(max_species),
           ' species have these dynamics.', end='\n')
@@ -128,10 +128,32 @@ def find_multistability(lineages,no_species,
     
 ################################# Main ################################        
    
-interact_dist = {"mu_a":0.9,"sigma_a":0.05}
-chaotic_interactions = np.load("chaos_09_005.npy")
+#interact_dist = {"mu_a":0.9,"sigma_a":0.05}
+#chaotic_interactions = np.load("chaos_09_005.npy")
 
-no_species = 50
-lineages = np.arange(10)
+#no_species = 50
+#lineages = np.arange(10)
 
-test_res = find_chaos(lineages,no_species,1,30000,interact_func_args=interact_dist,interaction_matrix=chaotic_interactions)
+#test_res = find_chaos(lineages,no_species,1,30000,interact_func_args=interact_dist,interaction_matrix=chaotic_interactions)
+
+interact_distributions = [{"mu_a":0.1,"sigma_a":0.1},
+                          {"mu_a":0.4,"sigma_a":0.1},
+                          {"mu_a":0.7,"sigma_a":0.1},
+                          {"mu_a":0.9,"sigma_a":0.1},
+                          {"mu_a":1.1,"sigma_a":0.1}]
+
+min_species = 3
+max_species = 15
+
+no_communities = 10
+no_lineages = 5
+
+t_end = 30000
+
+results = {}
+
+results = [[interact_dist,min_no_species_for_dynamics(min_species, max_species, no_communities, no_lineages,
+                            t_end, find_chaos,
+                            **{'interact_func':'random','interact_func_args':interact_dist})] \
+                   for interact_dist in interact_distributions]
+    
