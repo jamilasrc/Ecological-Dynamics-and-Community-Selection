@@ -800,7 +800,8 @@ def identify_ecological_dynamics(data,le_mean_col,le_sigma_col,
 
     return data
 
-def generate_distribution(mu_maxmin,std_maxmin,mu_step=0.1,std_step=0.05):
+def generate_distribution(mu_maxmin,std_maxmin,dict_labels=['mu_a','sigma_a'],
+                          mu_step=0.1,std_step=0.05):
     
     '''
     
@@ -822,7 +823,7 @@ def generate_distribution(mu_maxmin,std_maxmin,mu_step=0.1,std_step=0.05):
         DESCRIPTION.
 
     '''
-    
+     
     mu_min = mu_maxmin[0]
     mu_max = mu_maxmin[1]
     
@@ -835,9 +836,8 @@ def generate_distribution(mu_maxmin,std_maxmin,mu_step=0.1,std_step=0.05):
     mu_rep = np.repeat(mu_range,len(std_range))
     std_rep = np.tile(std_range,len(mu_range))
     
-    distributions = np.vstack((mu_rep,std_rep)).T
-    distributions = distributions.tolist()
-    
+    distributions = [{dict_labels[0]:mu, dict_labels[1]:sigma} for mu, sigma in zip(mu_rep,std_rep)]
+     
     return distributions
    
 def find_nearest_in_timeframe(timeframe,simulation_times):
