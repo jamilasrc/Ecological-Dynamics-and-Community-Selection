@@ -733,13 +733,14 @@ class community(community_parameters):
            
            separation_dt = np.sqrt(np.sum((species_abundances_end - species_abundances_end_sep)**2))
            
-           log_d1d0 = np.log(np.abs(separation_dt/separation))
+           #log_d1d0 = np.log(np.abs(separation_dt/separation))
+           log_d1d0 = (1/dt)*np.log(np.abs(separation_dt/separation))
            log_d1d0_list.append(log_d1d0)
            
            initial_conditions_no_sep = species_abundances_end
            initial_conditions_sep = species_abundances_end + \
                (separation/separation_dt)*(species_abundances_end_sep-species_abundances_end)
-               
+       
        max_lyapunov_exponent = mean_std_deviation(np.array(log_d1d0_list))
        
        return max_lyapunov_exponent

@@ -173,4 +173,13 @@ pickle_dump('three_species_community_chaos.pkl', three_species_community_chaos)
 pickle_dump('four_species_community_chaos1.pkl', four_species_community_chaos1)
 pickle_dump('four_species_community_chaos2.pkl', four_species_community_chaos2)
 
+############################################
 
+three_species_community_chaos = pd.read_pickle('three_species_community_chaos.pkl')
+
+plt.plot(three_species_community_chaos.ODE_sols['lineage 0'].t[1000:2000],
+         three_species_community_chaos.ODE_sols['lineage 0'].y[:,1000:2000].T)
+
+three_species_community_chaos.calculate_lyapunov_exponents(np.arange(5),
+                                                           separation=1e-3,dt=7000)
+three_species_community_chaos.lyapunov_exponents
