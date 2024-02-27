@@ -13,14 +13,13 @@ from matplotlib import pyplot as plt
 import pandas as pd
 
 from community_dynamics_and_properties_v2 import *
-from community_selection_protocols_and_analysis import *
 
 ########################################
 
 def min_no_species_for_dynamics(min_species,max_species,no_communities,no_lineages,t_end,
                                 dynamics_function,**dynamics_function_args):
     
-    print(dynamics_function_args['interact_func_args'])
+    print(dynamics_function_args['interact_args'])
     
     no_species_range = np.arange(min_species,max_species)
     
@@ -41,14 +40,11 @@ def min_no_species_for_dynamics(min_species,max_species,no_communities,no_lineag
           ' species exhibit these dynamics.', end='\n')
     
 
-def find_chaos(lineages,no_species,no_communities,t_end,
-               interact_func=None,interact_func_args=None,interaction_matrix=None):
+def find_chaos(lineages,no_species,no_communities,t_end,**dynamics_function_args):
     
     for comm in range(no_communities):
         
-        community_dynamics = community(no_species,
-                                        "fixed", None,
-                                        interact_func, interact_func_args, usersupplied_interactmat=interaction_matrix)
+        community_dynamics = community(no_species,"fixed", None,**dynamics_function_args)
         community_dynamics.simulate_community(t_end,"Default",lineages,init_cond_func_name="Mallmin")
         
         fluctuating_lineages = [lineage for lineage, fluctuations in community_dynamics.fluctuations.items() \
@@ -65,22 +61,24 @@ def find_chaos(lineages,no_species,no_communities,t_end,
             
             for lineage_no in lineages_no:
                 
-                
                 lineage_period = find_period_ode_system(community_dynamics.ODE_sols['lineage ' + str(lineage_no)])
                 
                 if not np.isnan(lineage_period).all():
                 
-                    community_dynamics.calculate_lyapunov_exponents([lineage_no],
+                    community_dynamics.calculate_lyapunov_exponents([lineage_no],separation=1e-3,
                                                           dt=np.nanmax(np.array(lineage_period)))
                     
                 else:
                     
-                    community_dynamics.calculate_lyapunov_exponents([lineage_no],
+                    community_dynamics.calculate_lyapunov_exponents([lineage_no],separation=1e-3,
                                                           dt=10000)
                     
                 le_lineage = list(deepcopy(community_dynamics.lyapunov_exponents).values())[0]
                 
-                if (-1 < le_lineage[0] < 15) & (le_lineage[1] >= 0.7):
+                predicted_dynamics = identify_ecological_dynamics(np.array(le_lineage[0]),
+                                                                  np.array(le_lineage[1]))
+                
+                if predicted_dynamics == 'chaotic-like':
                     
                     print('Chaos has been identified in lineage ',str(lineage_no),'.', end='\n')
                     print('This community exhibits chaos.', end='\n')
@@ -139,7 +137,7 @@ def find_multistability(lineages,no_species,
     
 ################################# Main ################################        
    
-interaction_distributions = generate_distribution([0.7,1.1], [0.05,0.2])
+interaction_distributions = generate_distribution([0.8,1.1], [0.1,0.2])
 
 min_species = 3
 max_species = 15
@@ -152,34 +150,19 @@ t_end = 30000
 min_species_for_chaos_per_dist = [[interact_dist,min_no_species_for_dynamics(min_species,
                                                      max_species, no_communities, no_lineages,
                                                      t_end, find_chaos,
-                                                     **{'interact_func':'random','interact_func_args':interact_dist})] \
+                                                     **{'interact_func_name':'random','interact_args':interact_dist})] \
                                   for interact_dist in interaction_distributions]
-    
-three_species_community_chaos = min_species_for_chaos_per_dist[10][1][1]
 
-plt.plot(three_species_community_chaos.ODE_sols['lineage 0'].t[1000:2000],
-         three_species_community_chaos.ODE_sols['lineage 0'].y[:,1000:2000].T)
+example_five_species_chaotic_community = min_species_for_chaos_per_dist[3][1][1]
 
-four_species_community_chaos1 = min_species_for_chaos_per_dist[13][1][1]
-four_species_community_chaos2 = min_species_for_chaos_per_dist[15][1][1]
+plt.plot(example_five_species_chaotic_community.ODE_sols['lineage 0'].t[2000:3000],
+         example_five_species_chaotic_community.ODE_sols['lineage 0'].y[:,2000:3000].T)
 
-plt.plot(four_species_community_chaos1.ODE_sols['lineage 0'].t[1000:2000],
-         four_species_community_chaos1.ODE_sols['lineage 0'].y[:,1000:2000].T)
+np.array(example_five_species_chaotic_community.lyapunov_exponents['lineage 0'])*1e4
 
-plt.plot(four_species_community_chaos2.ODE_sols['lineage 0'].t[1000:2000],
-         four_species_community_chaos2.ODE_sols['lineage 0'].y[:,1000:2000].T)
+example_seven_species_chaotic_community = min_species_for_chaos_per_dist[6][1][1]
 
-pickle_dump('three_species_community_chaos.pkl', three_species_community_chaos)
-pickle_dump('four_species_community_chaos1.pkl', four_species_community_chaos1)
-pickle_dump('four_species_community_chaos2.pkl', four_species_community_chaos2)
+plt.plot(example_seven_species_chaotic_community.ODE_sols['lineage 4'].t[2000:3000],
+         example_seven_species_chaotic_community.ODE_sols['lineage 4'].y[:,2000:3000].T)
 
-############################################
-
-three_species_community_chaos = pd.read_pickle('three_species_community_chaos.pkl')
-
-plt.plot(three_species_community_chaos.ODE_sols['lineage 0'].t[1000:2000],
-         three_species_community_chaos.ODE_sols['lineage 0'].y[:,1000:2000].T)
-
-three_species_community_chaos.calculate_lyapunov_exponents(np.arange(5),
-                                                           separation=1e-3,dt=7000)
-three_species_community_chaos.lyapunov_exponents
+np.array(example_seven_species_chaotic_community.lyapunov_exponents['lineage 2'])*1e4

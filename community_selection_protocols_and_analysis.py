@@ -373,9 +373,3 @@ def heritability(parent_offspring_1darray,no_communities):
 
 ####################### Other ###########################
 
-def pickle_dump(filename,data):
-    
-    with open(filename, 'wb') as fp:
-        
-        pickle.dump(data, fp)
-
