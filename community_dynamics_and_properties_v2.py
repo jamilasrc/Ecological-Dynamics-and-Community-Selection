@@ -464,25 +464,42 @@ class gLV:
         
         return solve_ivp(gLV_ode,[0,t_end],self.initial_abundances,
                          args=(self.growth_rates,self.interaction_matrix,dispersal),
-                         method='RK45')
+                         method='RK45',t_eval=np.linspace(0,t_end,200))
     
     ########### Community properties #############
     
-    def identify_community_properties(self,t_end=7000):
+    def identify_community_properties(self,t_end):
+        
+        '''
+        
+        Identify community properties.
+
+        Parameters
+        ----------
+        t_end : float
+            End time for calculating community properties. Typically the end of simulation.
+
+        Returns
+        -------
+        None.
+
+        '''
+        
+        t_end_minus_last20percent = 0.8*t_end
         
         ###### Calculate diversity-related properties ###########
         
-        final_popdyn = self.species_diversity(-1)
+        final_popdyn = self.species_diversity([t_end_minus_last20percent,t_end])
         
         self.final_diversity = final_popdyn[1]
-        self.final_composition = np.concatenate((final_popdyn[0],
+        self.final_composition = np.concatenate((np.where(final_popdyn[0] == True)[0],
                                                  np.zeros(self.ODE_sol.y.shape[0]-self.final_diversity)))
         
         ########## Determine if the community is fluctuating ###############
        
-        self.fluctuations = self.detect_fluctuations_timeframe(5e-2,[t_end-500,t_end])
+        self.fluctuations = self.detect_fluctuations_timeframe(5e-2,[t_end_minus_last20percent,t_end])
         
-    def species_diversity(self,ind,extinct_thresh=1e-4):
+    def species_diversity(self,timeframe,extinct_thresh=1e-4):
         
         '''
         
@@ -503,14 +520,20 @@ class gLV:
 
         '''
         
+        simulations_copy = deepcopy(self.ODE_sol)
+        
+        # find the indices of the nearest time to the times supplied in timeframe
+        indices = find_nearest_in_timeframe(timeframe,simulations_copy.t)    
+        
         # find species that aren't extinct aka species with abundances greater than the extinction threshold.
-        present_species = np.where(self.ODE_sol.y[:,ind] > extinct_thresh)
+        present_species = np.any(simulations_copy.y[:,indices[0]:indices[1]] > extinct_thresh,
+                                 axis=1)
         
         # calculate species diversity (aka no. of species that aren't extinct, 
         #   or the length of the array of present species abundances)
-        diversity = present_species[0].shape[0]
+        diversity = np.sum(present_species)
          
-        return [present_species[0],diversity]
+        return [present_species,diversity]
         
     def detect_fluctuations_timeframe(self,fluctuation_thresh,timeframe,extinct_thresh=1e-4):
         
@@ -817,7 +840,7 @@ class community(community_parameters):
                gLV_res = gLV(self,t_end,init_cond_func_name)
                
                # Calculate community properties, assign to class attributes
-               gLV_res.identify_community_properties()
+               gLV_res.identify_community_properties(t_end)
                self.assign_gLV_attributes(gLV_res, lineage)
                
                # Calculate community community function, assign to class attributes
@@ -833,7 +856,7 @@ class community(community_parameters):
                gLV_res = gLV(self,t_end,init_cond_func_name)
                
                # Calculate community properties, assign to class attributes
-               gLV_res.identify_community_properties()
+               gLV_res.identify_community_properties(t_end)
                self.assign_gLV_attributes(gLV_res, lineage)
        
        # Calculate the number of unique species compositions for the species pool
@@ -872,26 +895,28 @@ class community(community_parameters):
       
            for count, lineage in enumerate(lineages):
                
-             # Call gLV class to simulate community dynamics
-             gLV_res = gLV(self,t_end,usersupplied_init_cond=array_of_init_conds[:,count])
+               # Call gLV class to simulate community dynamics
+               gLV_res = gLV(self,t_end,usersupplied_init_cond=array_of_init_conds[:,count])
              
-             # Calculate community properties, assign to class attributes
-             gLV_res.identify_community_properties()
-             self.assign_gLV_attributes(gLV_res, lineage)
+               # Calculate community properties, assign to class attributes
+               gLV_res.identify_community_properties(t_end)
+               self.assign_gLV_attributes(gLV_res, lineage)
              
-             # Calculate community community function, assign to class attributes
-             gLV_res.call_community_function(self.species_contribute_community_function)
-             self.assign_community_function(gLV_res, lineage)
+               # Calculate community community function, assign to class attributes
+               gLV_res.call_community_function(self.species_contribute_community_function)
+               self.assign_community_function(gLV_res, lineage)
         
        else:
            
-           # Call gLV class to simulate community dynamics
-           gLV_res = gLV(self,t_end,usersupplied_init_cond=array_of_init_conds[:,count])
+           for count, lineage in enumerate(lineages):
            
-           # Calculate community properties, assign to class attributes
-           gLV_res.identify_community_properties()
-           self.assign_gLV_attributes(gLV_res, lineage)
-       
+                # Call gLV class to simulate community dynamics
+                gLV_res = gLV(self,t_end,usersupplied_init_cond=array_of_init_conds[:,count])
+                
+                # Calculate community properties, assign to class attributes
+                gLV_res.identify_community_properties(t_end)
+                self.assign_gLV_attributes(gLV_res, lineage)
+            
        # Calculate the number of unique species compositions for the species pool
        self.no_unique_compositions = self.unique_compositions()
        
@@ -1066,12 +1091,8 @@ class community(community_parameters):
        # Initialise list of max. lyapunov exponents
        log_d1d0_list = []
        
-       # Extract lineage community dynamics
-       pop_dyn = self.ODE_sols[dict_key].y
-       # Set initial conditions as population abundances halfway through community dynamics simulations
-       #    (Not really sure why I do this, would probably be better to set
-       #    initial conditions as final species abundances.)
-       initial_conditions = pop_dyn[:,np.round(pop_dyn.shape[1]/2,0).astype(int)]
+       # Set initial conditions as population abundances at the end of lineage simulations
+       initial_conditions = self.ODE_sols[dict_key].y[:,-1]
        
        # Set initial conditions of the original trajectory
        initial_conditions_no_sep = deepcopy(initial_conditions)
@@ -1146,7 +1167,8 @@ def gLV_ode(t,spec,growth_r,interact_mat,dispersal):
 
     '''
     
-    dSdt = np.multiply(growth_r - np.matmul(interact_mat,spec), spec) + dispersal
+    #dSdt = np.multiply(growth_r - np.matmul(interact_mat,spec), spec) + dispersal
+    dSdt = np.multiply(1 - np.matmul(interact_mat,spec), growth_r*spec) + dispersal
     
     return dSdt
 
