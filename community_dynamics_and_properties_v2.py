@@ -550,22 +550,27 @@ class gLV:
         
         if fluctuating_species.size > 0:
             
-            breakpoint()
-        
             when_fluctuating_species_are_lost = np.argwhere(self.ODE_sol.y[fluctuating_species,:] \
                                                             < baseline_abundance)
-            
-            unique_species, index = np.unique(when_fluctuating_species_are_lost[:,0],
-                                              return_index=True)
-            
-            when_fluctuating_species_are_lost = when_fluctuating_species_are_lost[index,:]
-            
-            reinvading_species = np.array([np.any(self.ODE_sol.y[fluctuating_species[spec],
-                                         when_fluctuating_species_are_lost[spec,1]:] > baseline_abundance) \
-                                                for spec in unique_species])
                 
-            proportion_fluctuating_reinvading_species = np.sum(reinvading_species)/len(extant_species)
+            if when_fluctuating_species_are_lost.size > 0:
             
+                unique_species, index = np.unique(when_fluctuating_species_are_lost[:,0],
+                                                  return_index=True)
+                
+                when_fluctuating_species_are_lost = when_fluctuating_species_are_lost[index,:]
+                
+                reinvading_species = np.array([np.any(self.ODE_sol.y[\
+                                            fluctuating_species[when_fluctuating_species_are_lost[i,0]],
+                                             when_fluctuating_species_are_lost[i,1]:] > baseline_abundance) \
+                                                    for i in range(when_fluctuating_species_are_lost.shape[0])])
+                    
+                proportion_fluctuating_reinvading_species = np.sum(reinvading_species)/len(extant_species)
+                
+            else:
+                
+                proportion_fluctuating_reinvading_species = 0 
+
         else:
             
             proportion_fluctuating_reinvading_species = 0 
