@@ -25,6 +25,7 @@ import numpy as np
 from scipy.integrate import solve_ivp
 from scipy import stats
 from scipy.signal import find_peaks
+from scipy.signal import peak_prominences
 from scipy.fft import rfft
 from scipy.fft import rfftfreq
 
@@ -367,8 +368,7 @@ class gLV:
         #   (This isn't necessary, but I like it.)
         self.growth_rates = community_parameters_object.growth_rates
         self.interaction_matrix = community_parameters_object.interaction_matrix
-        
-        dispersal = community_parameters_object.dispersal
+        self.dispersal = community_parameters_object.dispersal
         
         if usersupplied_init_cond is None:
         
@@ -378,7 +378,7 @@ class gLV:
                                             community_parameters_object.mu_a]},
                               "Mallmin":{"func":self.initial_abundances_mallmin,
                                          "args":[community_parameters_object.no_species
-                                                 ,community_parameters_object.dispersal]}}[init_cond_func_name]
+                                                 ,self.dispersal]}}[init_cond_func_name]
             
             # Generate initial conditions
             self.initial_abundances = init_cond_func_info['func'](*init_cond_func_info['args'])
@@ -388,7 +388,7 @@ class gLV:
             # Assign initial conditions using the user-supplied initial abundances, if supplied.
             self.initial_abundances = usersupplied_init_cond
         
-        self.ODE_sol = self.gLV_simulation(dispersal,t_end)
+        self.ODE_sol = self.gLV_simulation(t_end)
       
     ########## Functions for generating initial conditions ############
       
@@ -436,7 +436,7 @@ class gLV:
 
     ####### Simulate dynamics ###############
     
-    def gLV_simulation(self,dispersal,t_end):
+    def gLV_simulation(self,t_end):
         
         '''
         
@@ -463,7 +463,7 @@ class gLV:
         '''
         
         return solve_ivp(gLV_ode,[0,t_end],self.initial_abundances,
-                         args=(self.growth_rates,self.interaction_matrix,dispersal),
+                         args=(self.growth_rates,self.interaction_matrix,self.dispersal),
                          method='RK45',t_eval=np.linspace(0,t_end,200))
     
     ########### Community properties #############
@@ -486,6 +486,7 @@ class gLV:
         '''
         
         t_end_minus_last20percent = 0.8*t_end
+        t_end_minus_last30percent = 0.7*t_end
         
         ###### Calculate diversity-related properties ###########
         
@@ -498,6 +499,8 @@ class gLV:
         ########## Determine if the community is fluctuating ###############
        
         self.fluctuations = self.detect_fluctuations_timeframe(5e-2,[t_end_minus_last20percent,t_end])
+        
+        self.invasibility = self.detect_invasibility(t_end_minus_last30percent)
         
     def species_diversity(self,timeframe,extinct_thresh=1e-4):
         
@@ -534,6 +537,40 @@ class gLV:
         diversity = np.sum(present_species)
          
         return [present_species,diversity]
+    
+    def detect_invasibility(self,t_start,extinct_thresh=1e-4):
+        
+        baseline_abundance = self.dispersal * 1e2
+        
+        extant_species = np.any(self.ODE_sol.y[:,np.where(self.ODE_sol.t > \
+                                    t_start)[0]] > extinct_thresh,axis = 1).nonzero()[0]
+
+        fluctuating_species = extant_species[np.logical_not(np.isnan(find_period_ode_system(self.ODE_sol,
+                                                                                       t_start)))]
+        
+        if fluctuating_species.size > 0:
+            
+            breakpoint()
+        
+            when_fluctuating_species_are_lost = np.argwhere(self.ODE_sol.y[fluctuating_species,:] \
+                                                            < baseline_abundance)
+            
+            unique_species, index = np.unique(when_fluctuating_species_are_lost[:,0],
+                                              return_index=True)
+            
+            when_fluctuating_species_are_lost = when_fluctuating_species_are_lost[index,:]
+            
+            reinvading_species = np.array([np.any(self.ODE_sol.y[fluctuating_species[spec],
+                                         when_fluctuating_species_are_lost[spec,1]:] > baseline_abundance) \
+                                                for spec in unique_species])
+                
+            proportion_fluctuating_reinvading_species = np.sum(reinvading_species)/len(extant_species)
+            
+        else:
+            
+            proportion_fluctuating_reinvading_species = 0 
+            
+        return proportion_fluctuating_reinvading_species
         
     def detect_fluctuations_timeframe(self,fluctuation_thresh,timeframe,extinct_thresh=1e-4):
         
@@ -750,6 +787,9 @@ class community(community_parameters):
        # Species diversity for each lineage at the end of simulations
        self.diversity = {}
        
+       # % species that fluctuate and can reinvade the community
+       self.invasibilities = {}
+       
    ########################
       
    def simulate_community(self,
@@ -955,6 +995,9 @@ class community(community_parameters):
        
        # Assign % species with flucutating dynamics
        self.fluctuations[dict_key] = gLV_res.fluctuations
+       
+       # Assign community invasibility from species pool
+       self.invasibilities[dict_key] = gLV_res.invasibility
       
              
    def assign_community_function(self,gLV_res,lineage):
@@ -1404,11 +1447,11 @@ def mean_std_deviation(data):
     
     return [mean, std_deviation]
 
-def find_period_ode_system(ode_object,extinct_thresh=1e-4,dt=10):
+def find_period_ode_system(ode_object,t_start,extinct_thresh=1e-4,dt=10):
     
     t_discretised = np.arange(0,ode_object.t[-1],dt)
    
-    extant_species = np.where(np.any(ode_object.y[:,np.where(ode_object.t > 10000)[0]] > 1e-4,
+    extant_species = np.where(np.any(ode_object.y[:,np.where(ode_object.t > t_start)[0]] > extinct_thresh,
                                           axis = 1) == True)[0]
     
     def find_max_period_species(ode_object,t_discretised,dt,species):
@@ -1419,17 +1462,24 @@ def find_period_ode_system(ode_object,extinct_thresh=1e-4,dt=10):
         normalised_fourier_spec = 2*np.abs(fourier_spec)/len(interpolated_spec)
 
         period = 1/rfftfreq(len(interpolated_spec), d=dt)
-        #period_max_wave = period[np.argmax(normalised_fourier_spec[1:])+1]
         
-        #return period_max_wave
+        peak_ind, _ = find_peaks(normalised_fourier_spec[1:])
         
-        peak_ind, _ = find_peaks(normalised_fourier_spec[1:],height=0.01)
-        
-        try:
+        if peak_ind.size > 0:
             
-            max_period = period[peak_ind[0]+1]
-            
-        except IndexError:
+            prominences = peak_prominences(normalised_fourier_spec, peak_ind+1)[0]
+            normalised_prominences = prominences/(normalised_fourier_spec[peak_ind+1] - prominences)
+            peak_ind = peak_ind[normalised_prominences > 0.1]
+    
+            try:
+                
+                max_period = period[peak_ind[0]+1]
+                
+            except IndexError:
+                
+                max_period = np.nan
+                
+        else: 
             
             max_period = np.nan
         

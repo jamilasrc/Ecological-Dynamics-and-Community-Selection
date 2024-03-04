@@ -11,6 +11,7 @@ import pandas as pd
 import seaborn as sns
 from copy import deepcopy
 from scipy.stats import linregress
+import itertools
 
 import statsmodels.api as sm
 from statsmodels.formula.api import ols
@@ -195,7 +196,7 @@ percent_match = np.count_nonzero(predicted_ecological_dynamics == \
 ####################
 
 res_eco_lem = MNLogit(community_dynamics_df['Ecological_Dynamics'],
-                     community_dynamics_df['Le_mean']).fit()
+                     community_dynamics_df[['Le_mean']]).fit()
 
 ecological_dynamics_probabilites2 = res_eco_lem.predict(community_dynamics_df[['Le_mean']])
 
@@ -223,4 +224,118 @@ percent_match3 = np.count_nonzero(predicted_ecological_dynamics3 == \
 print(percent_match3,end='\n')
 
 
+#####################
 
+sns.scatterplot(community_dynamics_df,x='Le_mean',y='Le_std',hue='Ecological_Dynamics')
+
+sns.scatterplot(community_dynamics_df,x='No_Species',y='Le_mean',size='Le_std',
+                hue='Ecological_Dynamics')
+
+#################################
+
+community_dynamics_dict = pd.read_pickle('community_dynamics_different_no_species.pkl')
+community_dynamics_df = pd.read_csv('community_dynamics_different_no_species.csv',index_col=False)
+
+min_species = 4
+max_species = 50
+no_species_to_test = np.arange(min_species,max_species,3)
+
+no_communities = 6
+no_lineages = 5
+interaction_distribution = {'mu_a':0.9,'sigma_a':0.15}
+t_end = 10000
+
+for no_species, community_per_species in community_dynamics_dict.items():
+    
+    print(str(no_species),end='\n')
+    
+    for i, community_i in enumerate(community_per_species):
+        
+        community_i.calculate_lyapunov_exponents(np.arange(no_lineages),dt=1000,
+                                                 separation=1e-3,n=40)
+        print('Community',str(i),'max. lyapunov exponents have been calculated.',
+              end='\n')
+
+new_le_m_col = []        
+new_le_s_col = []        
+        
+for community_per_species in community_dynamics_dict.values():
+    
+    for community_i in community_per_species:
+        
+        community_extract_le = deepcopy(community_i)
+        le_values = list(community_extract_le.lyapunov_exponents.values())
+        
+        le_m = [le[0] for le in le_values]
+        le_std = [le[1] for le in le_values]
+        
+        new_le_m_col.append(le_m)
+        new_le_s_col.append(le_std)
+        
+new_le_m_col = list(itertools.chain.from_iterable(new_le_m_col))
+new_le_s_col = list(itertools.chain.from_iterable(new_le_s_col))
+
+community_dynamics_df['Le_mean'] = new_le_m_col
+community_dynamics_df['Le_std'] = new_le_s_col
+
+pickle_dump('community_dynamics_different_no_species.pkl',community_dynamics_dict)
+community_dynamics_df.to_csv('community_dynamics_different_no_species.csv')
+
+#########
+
+sns.scatterplot(community_dynamics_df,x='Le_mean',y='Le_std',hue='Ecological_Dynamics')
+
+sns.scatterplot(community_dynamics_df,x='No_Species',y='Le_mean',
+                hue='Ecological_Dynamics')
+
+res_eco_lem = MNLogit(community_dynamics_df['Ecological_Dynamics'],
+                     community_dynamics_df[['Le_mean','No_Species']]).fit()
+
+ecological_dynamics_probabilites2 = res_eco_lem.predict(community_dynamics_df[['Le_mean','No_Species']])
+
+predicted_ecological_dynamics2 = np.ma.choose(np.argmax(ecological_dynamics_probabilites2.to_numpy(),axis=1),
+                                             np.array(['chaotic-like','oscillations','stable']))
+
+percent_match2 = np.count_nonzero(predicted_ecological_dynamics2 == \
+                                 community_dynamics_df['Ecological_Dynamics'].to_numpy()\
+                                     )/len(predicted_ecological_dynamics2)*100
+print(percent_match2,end='\n')
+
+sns.scatterplot(community_dynamics_df,x='Le_mean',y='Le_std',hue='Diversity')
+
+sns.scatterplot(community_dynamics_df,x='Le_mean',y='Le_std',hue='Ecological_Dynamics',
+                size='Diversity')
+
+res_div_by_le = ols('Diversity ~ Le_std + Le_mean',data=community_dynamics_df).fit()
+print(res_div_by_le.summary())
+print(anova_lm(res_div_by_le))
+
+sns.histplot(community_dynamics_df,x='Le_mean',hue='Ecological_Dynamics')
+sns.histplot(community_dynamics_df,x='Le_std',hue='Ecological_Dynamics')
+
+large_chaotic_community = deepcopy(community_dynamics_dict['49 species'][3])
+large_chaotic_community_repeat = community(large_chaotic_community.no_species,
+                                    'fixed',None,None,
+                                    {'mu_a':large_chaotic_community.mu_a,'sigma_a':large_chaotic_community.sigma_a},
+                                    usersupplied_interactmat=large_chaotic_community.interaction_matrix)
+large_chaotic_community_repeat.simulate_community(t_end,'Default',np.arange(no_lineages),
+                                      init_cond_func_name='Mallmin')
+large_chaotic_community_repeat.invasibilities
+
+small_stable_community = deepcopy(community_dynamics_dict['16 species'][1])
+small_stable_community_repeat = community(small_stable_community.no_species,
+                                    'fixed',None,None,
+                                    {'mu_a':small_stable_community.mu_a,'sigma_a':small_stable_community.sigma_a},
+                                    usersupplied_interactmat=small_stable_community.interaction_matrix)
+small_stable_community_repeat.simulate_community(t_end,'Default',np.arange(no_lineages),
+                                      init_cond_func_name='Mallmin')
+small_stable_community_repeat.invasibilities
+
+oscillating_community = deepcopy(community_dynamics_dict['25 species'][5])
+oscillating_community_repeat = community(oscillating_community.no_species,
+                                    'fixed',None,None,
+                                    {'mu_a':oscillating_community.mu_a,'sigma_a':oscillating_community.sigma_a},
+                                    usersupplied_interactmat=oscillating_community.interaction_matrix)
+oscillating_community_repeat.simulate_community(t_end,'Default',np.arange(no_lineages),
+                                      init_cond_func_name='Mallmin')
+oscillating_community_repeat.invasibilities
