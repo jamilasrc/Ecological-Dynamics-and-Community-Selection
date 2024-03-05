@@ -540,17 +540,18 @@ class gLV:
     
     def detect_invasibility(self,t_start,extinct_thresh=1e-4):
         
+        t_start_index = np.where(self.ODE_sol.t >= t_start)[0]
+        
         baseline_abundance = self.dispersal * 1e2
         
-        extant_species = np.any(self.ODE_sol.y[:,np.where(self.ODE_sol.t > \
-                                    t_start)[0]] > extinct_thresh,axis = 1).nonzero()[0]
+        extant_species = np.any(self.ODE_sol.y[:,t_start_index] > extinct_thresh,axis = 1).nonzero()[0]
 
         fluctuating_species = extant_species[np.logical_not(np.isnan(find_period_ode_system(self.ODE_sol,
                                                                                        t_start)))]
         
         if fluctuating_species.size > 0:
             
-            when_fluctuating_species_are_lost = np.argwhere(self.ODE_sol.y[fluctuating_species,:] \
+            when_fluctuating_species_are_lost = np.argwhere(self.ODE_sol.y[fluctuating_species,t_start_index[0]:] \
                                                             < baseline_abundance)
                 
             if when_fluctuating_species_are_lost.size > 0:
@@ -562,8 +563,9 @@ class gLV:
                 
                 reinvading_species = np.array([np.any(self.ODE_sol.y[\
                                             fluctuating_species[when_fluctuating_species_are_lost[i,0]],
-                                             when_fluctuating_species_are_lost[i,1]:] > baseline_abundance) \
-                                                    for i in range(when_fluctuating_species_are_lost.shape[0])])
+                                             (t_start_index[0] + when_fluctuating_species_are_lost[i,1]):] \
+                                                      > baseline_abundance) for i in \
+                                               range(when_fluctuating_species_are_lost.shape[0])])
                     
                 proportion_fluctuating_reinvading_species = np.sum(reinvading_species)/len(extant_species)
                 
@@ -1344,7 +1346,8 @@ def generate_distribution(mu_maxmin,std_maxmin,dict_labels=['mu_a','sigma_a'],
     mu_rep = np.repeat(mu_range,len(std_range))
     std_rep = np.tile(std_range,len(mu_range))
     
-    distributions = [{dict_labels[0]:mu, dict_labels[1]:sigma} for mu, sigma in zip(mu_rep,std_rep)]
+    distributions = [{dict_labels[0]:np.round(mu,2), dict_labels[1]:np.round(sigma,2)} \
+                     for mu, sigma in zip(mu_rep,std_rep)]
      
     return distributions
    
@@ -1454,14 +1457,17 @@ def mean_std_deviation(data):
 
 def find_period_ode_system(ode_object,t_start,extinct_thresh=1e-4,dt=10):
     
-    t_discretised = np.arange(0,ode_object.t[-1],dt)
+    t_discretised = np.arange(t_start,ode_object.t[-1],dt)
    
     extant_species = np.where(np.any(ode_object.y[:,np.where(ode_object.t > t_start)[0]] > extinct_thresh,
                                           axis = 1) == True)[0]
     
-    def find_max_period_species(ode_object,t_discretised,dt,species):
+    def find_max_period_species(ode_object,t_start,t_discretised,dt,species):
         
-        interpolated_spec = np.interp(t_discretised,ode_object.t,ode_object.y[species,:])
+        interpolated_spec = np.interp(t_discretised,ode_object.t[np.where(ode_object.t > t_start)[0]],
+                                      ode_object.y[species,np.where(ode_object.t > t_start)[0]])
+        
+        #interpolated_spec = np.interp(t_discretised,ode_object.t,ode_object.y[species,:])
 
         fourier_spec = rfft(interpolated_spec)
         normalised_fourier_spec = 2*np.abs(fourier_spec)/len(interpolated_spec)
@@ -1474,7 +1480,7 @@ def find_period_ode_system(ode_object,t_start,extinct_thresh=1e-4,dt=10):
             
             prominences = peak_prominences(normalised_fourier_spec, peak_ind+1)[0]
             normalised_prominences = prominences/(normalised_fourier_spec[peak_ind+1] - prominences)
-            peak_ind = peak_ind[normalised_prominences > 0.1]
+            peak_ind = peak_ind[normalised_prominences > 1]
     
             try:
                 
@@ -1490,7 +1496,7 @@ def find_period_ode_system(ode_object,t_start,extinct_thresh=1e-4,dt=10):
         
         return max_period
 
-    periods = [find_max_period_species(ode_object,t_discretised,dt,species) for species in extant_species]
+    periods = [find_max_period_species(ode_object,t_start,t_discretised,dt,species) for species in extant_species]
     
     return periods
     
