@@ -1467,8 +1467,6 @@ def find_period_ode_system(ode_object,t_start,extinct_thresh=1e-4,dt=10):
         interpolated_spec = np.interp(t_discretised,ode_object.t[np.where(ode_object.t > t_start)[0]],
                                       ode_object.y[species,np.where(ode_object.t > t_start)[0]])
         
-        #interpolated_spec = np.interp(t_discretised,ode_object.t,ode_object.y[species,:])
-
         fourier_spec = rfft(interpolated_spec)
         normalised_fourier_spec = 2*np.abs(fourier_spec)/len(interpolated_spec)
 

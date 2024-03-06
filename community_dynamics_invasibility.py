@@ -88,6 +88,27 @@ pickle_dump('community_dynamics_with_invasibility.pkl',community_dynamics_with_i
 
 ###########################
 
+community_dynamics_invasibility_df = pd.read_csv('community_dynamics_with_invasibility.csv',
+                                                 index_col=False)
+community_dynamics_with_invasibility = pd.read_pickle('community_dynamics_with_invasibility.pkl')
+
+sns.set_style('white')
+norm = plt.Normalize(community_dynamics_invasibility_df['Invasibility'].min(),
+                     community_dynamics_invasibility_df['Invasibility'].max())
+sm = plt.cm.ScalarMappable(cmap="viridis_r", norm=norm)
+ax = sns.scatterplot(community_dynamics_invasibility_df,x='No_Species',y='Diversity',
+                hue='Invasibility',palette=sns.color_palette("viridis_r",n_colors=100,as_cmap=True))
+plt.xlabel('Initial number of species',fontsize=14)
+plt.ylabel('Species diversity at the \n end of simulations',fontsize=14)
+ax.get_legend().remove()
+clb = plt.colorbar(sm, ax=ax)
+clb.ax.set_title('Invasibility',pad=6)
+plt.title('Effect of invasibility on species diversity',fontsize=16,pad=20)
+
+plt.savefig("Figures/diversity_no_species_invasibility.png", dpi=300, bbox_inches='tight')
+
+#######################
+
 sns.scatterplot(community_dynamics_invasibility_df,x='No_Species',y='Diversity',
                 hue='Invasibility')
 

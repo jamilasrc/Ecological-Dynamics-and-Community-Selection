@@ -283,18 +283,89 @@ community_dynamics_df.to_csv('community_dynamics_different_no_species.csv')
 
 #########
 
-sns.scatterplot(community_dynamics_df,x='Le_mean',y='Le_std',hue='Ecological_Dynamics')
+community_dynamics_dict = pd.read_pickle('community_dynamics_different_no_species.pkl')
+community_dynamics_df = pd.read_csv('community_dynamics_different_no_species.csv',index_col=False)
 
+sns.set_style('white')
+sns.scatterplot(community_dynamics_df,x='Le_mean',y='Le_std',hue='Ecological_Dynamics',
+                palette=sns.color_palette('husl',n_colors=3))
+plt.axvline(x=0,color='black',linestyle='--',linewidth=0.8)
+plt.xlabel('Mean max. lyapunov exponent',fontsize=14)
+plt.ylabel('Std. in max. lyapunov exponent',fontsize=14)
+plt.ticklabel_format(style='scientific', scilimits=(0,0))
+plt.legend(title='Ecological dynamics')
+plt.title('Effect of lyapunov exponents on ecological dynamics',fontsize=16)
+
+plt.savefig("Figures/le_mean_std_ecodyn.png", dpi=300, bbox_inches='tight')
+
+###########################
+
+sns.set_style('white')
 sns.scatterplot(community_dynamics_df,x='No_Species',y='Le_mean',
-                hue='Ecological_Dynamics')
+                hue='Ecological_Dynamics',palette=sns.color_palette('husl',n_colors=3))
+plt.xlabel('Number of species',fontsize=14)
+plt.ylabel('Mean max. lyapunov exponent',fontsize=14)
+plt.ticklabel_format(axis='y',style='scientific', scilimits=(0,0))
+plt.legend(title='Ecological dynamics')
+plt.title('Effect of lyapunov exponents on ecological dynamics',fontsize=16)
+
+plt.savefig("Figures/le_mean_no_species_ecodyn.png", dpi=300, bbox_inches='tight')
+
+###############################
+
+sns.set_style('white')
+sns.scatterplot(community_dynamics_df,x='No_Species',y='Diversity',
+                hue='Ecological_Dynamics',palette=sns.color_palette('husl',n_colors=3))
+plt.xlabel('Initial number of species',fontsize=14)
+plt.ylabel('Species diversity at the \n end of simulations',fontsize=14)
+plt.legend(title='Ecological dynamics')
+plt.title('Effect of ecological dynamics on species diversity',fontsize=16)
+
+plt.savefig("Figures/diversity_no_species_ecodyn.png", dpi=300, bbox_inches='tight')
+
+#########################
+
+sns.set_style('white')
+norm = plt.Normalize(community_dynamics_df['Le_mean'].min(),
+                     community_dynamics_df['Le_mean'].max())
+s_m = plt.cm.ScalarMappable(cmap="magma_r", norm=norm)
+ax = sns.scatterplot(community_dynamics_df,x='No_Species',y='Diversity',
+                hue='Le_mean',palette=sns.color_palette("magma_r",as_cmap=True))
+plt.xlabel('Initial number of species',fontsize=14)
+plt.ylabel('Species diversity at the \n end of simulations',fontsize=14)
+ax.get_legend().remove()
+clb = plt.colorbar(s_m, ax=ax)
+clb.ax.set_title('Mean max. \n lyapunov exponent')
+plt.title('Effect of lyapunov exponents on species diversity',
+          fontsize=16,pad=30)
+
+plt.savefig("Figures/diversity_no_species_le_mean.png", dpi=300, bbox_inches='tight')
+
+
+###################
 
 res_eco_lem = MNLogit(community_dynamics_df['Ecological_Dynamics'],
-                     community_dynamics_df[['Le_mean','No_Species']]).fit()
+                     community_dynamics_df[['Le_mean','Le_std','No_Species']]).fit()
 
-ecological_dynamics_probabilites2 = res_eco_lem.predict(community_dynamics_df[['Le_mean','No_Species']])
+ecological_dynamics_probabilites2 = res_eco_lem.predict(community_dynamics_df[['Le_mean','Le_std',
+                                                                               'No_Species']])
 
 predicted_ecological_dynamics2 = np.ma.choose(np.argmax(ecological_dynamics_probabilites2.to_numpy(),axis=1),
                                              np.array(['chaotic-like','oscillations','stable']))
+community_dynamics_df['Predicted_Dynamics'] = predicted_ecological_dynamics2
+
+sns.set_style('white')
+sns.scatterplot(community_dynamics_df,x='No_Species',y='Diversity',
+                hue='Predicted_Dynamics',palette=sns.color_palette('husl',n_colors=3))
+plt.xlabel('Initial number of species',fontsize=14)
+plt.ylabel('Species diversity at the \n end of simulations',fontsize=14)
+plt.legend(title='Predicted dynamics')
+plt.title('Predicted ecological dynamics using \n MNLogit(Ecological dynamics ~ mean l.e. + std. l.e. + Number of species)',
+          fontsize=16)
+
+plt.savefig("Figures/diversity_no_species_preddyn.png", dpi=300, bbox_inches='tight')
+
+#############################
 
 percent_match2 = np.count_nonzero(predicted_ecological_dynamics2 == \
                                  community_dynamics_df['Ecological_Dynamics'].to_numpy()\
