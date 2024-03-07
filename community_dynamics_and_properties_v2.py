@@ -31,6 +31,8 @@ from scipy.fft import rfftfreq
 
 from copy import deepcopy
 
+import collections.abc
+
 from matplotlib import pyplot as plt
 
 import pickle
@@ -366,6 +368,8 @@ class gLV:
         
         # Assign growth rates and interaction matrix as gLV class attributes.
         #   (This isn't necessary, but I like it.)
+        self.no_species = community_parameters_object.no_species
+        
         self.growth_rates = community_parameters_object.growth_rates
         self.interaction_matrix = community_parameters_object.interaction_matrix
         self.dispersal = community_parameters_object.dispersal
@@ -546,8 +550,8 @@ class gLV:
         
         extant_species = np.any(self.ODE_sol.y[:,t_start_index] > extinct_thresh,axis = 1).nonzero()[0]
 
-        fluctuating_species = extant_species[np.logical_not(np.isnan(find_period_ode_system(self.ODE_sol,
-                                                                                       t_start)))]
+        fluctuating_species = extant_species[np.logical_not(np.isnan([find_normalised_peaks(self.ODE_sol.y[spec,t_start_index])[0] \
+                                for spec in extant_species]))]
         
         if fluctuating_species.size > 0:
             
@@ -656,6 +660,7 @@ class gLV:
         fluct_prop = len(species_fluctutating)/pop_dyn.shape[0]
         
         return fluct_prop
+    
     ############# Community function ################
         
     def call_community_function(self,comm_parms_attr_contribution_comm_func):
@@ -1006,7 +1011,6 @@ class community(community_parameters):
        # Assign community invasibility from species pool
        self.invasibilities[dict_key] = gLV_res.invasibility
       
-             
    def assign_community_function(self,gLV_res,lineage):
        
        '''
@@ -1224,125 +1228,50 @@ def gLV_ode(t,spec,growth_r,interact_mat,dispersal):
 
 ####################### Random Global Functions ###############
 
-def identify_ecological_dynamics_df(data,le_mean_col,le_sigma_col,
-                                 predicted_dynamics_col="Predicted dynamics"):
-    
-    '''
-    
-    Identify a community's ecological dynamics based on their max. lyapunov exponent.
-    Options: stable, oscillations, chaos.
-    
-    This function assumes the lyapunov exponents are in a dataframe. The function 
-        evaluates the exponents, then adds a 'Predicted dynamics column'
-
-    Parameters
-    ----------
-    data : TYPE
-        DESCRIPTION.
-    le_mean_col : TYPE
-        DESCRIPTION.
-    le_sigma_col : TYPE
-        DESCRIPTION.
-    predicted_dynamics_col : TYPE, optional
-        DESCRIPTION. The default is "Predicted dynamics".
-
-    Returns
-    -------
-    data : TYPE
-        DESCRIPTION.
-
-    '''
-    
-    stable_boundary = -1
-    chaos_oscillations_boundary = np.round(0.1*np.sqrt(50),1)
-    divergence_threshold = 15
-    
-    eco_dynamics = ["stable","oscillations","chaotic-like"]
-    eco_dyn_conditions = [(data[le_mean_col] <= stable_boundary),
-                          (data[le_mean_col] > stable_boundary) & \
-                          (np.round(data[le_sigma_col],1) < chaos_oscillations_boundary),
-                          (data[le_mean_col] > stable_boundary) & \
-                          (np.round(data[le_sigma_col],1) >= chaos_oscillations_boundary)]
-        
-    data[predicted_dynamics_col] = np.select(eco_dyn_conditions,eco_dynamics)
-    
-    data.drop(data[data[le_mean_col] >= divergence_threshold].index,inplace=True)
-
-    return data
-
-def identify_ecological_dynamics(average_les,les_std):
-    
-    '''
-    
-    Identify a community's ecological dynamics based on their max. lyapunov exponent.
-    Options: stable, oscillations, chaos, divergent.
-
-    Parameters
-    ----------
-    average_les : np.array() of floats
-        Mean max. lyapunov exponents.
-    les_std : np.array() of floats
-        Standard deviation of max. lyapunov exponents.
-    Returns
-    -------
-    predicted_dynamics : np.array() of strings
-        Predicted ecological dynamics.
-
-    '''
-    
-    stable_boundary = -1
-    chaos_oscillations_boundary = np.round(0.1*np.sqrt(50),1)
-    divergence_threshold = 15
-    
-    eco_dynamics = ["stable","oscillations","chaotic-like","divergent"]
-    
-    average_les = average_les * 1e4
-    les_std =  les_std * 1e4
-    
-    eco_dyn_conditions = [(average_les <= stable_boundary),
-                          (divergence_threshold > average_les > stable_boundary) & \
-                          (np.round(les_std,1) < chaos_oscillations_boundary),
-                          (divergence_threshold > average_les > stable_boundary) & \
-                          (np.round(les_std,1) >= chaos_oscillations_boundary),
-                          (average_les >= divergence_threshold)]
-        
-    predicted_dynamics = np.select(eco_dyn_conditions,eco_dynamics)
-
-    return predicted_dynamics
-
 def generate_distribution(mu_maxmin,std_maxmin,dict_labels=['mu_a','sigma_a'],
                           mu_step=0.1,std_step=0.05):
     
     '''
     
+    Generate parameters for the random interaction distribution.
 
     Parameters
     ----------
-    mu_maxmin : TYPE
-        DESCRIPTION.
-    std_maxmin : TYPE
-        DESCRIPTION.
-    mu_step : TYPE, optional
-        DESCRIPTION. The default is 0.1.
-    std_step : TYPE, optional
-        DESCRIPTION. The default is 0.05.
+    mu_maxmin : list of floats
+        Minimum and maximum mean interaction strength, mu_a.
+    std_maxmin : list of floats
+        Minimum and maximum standard deviation in interaction strength, sigma_a.
+    mu_step : float, optional
+        mu_a step size. The default is 0.1.
+    std_step : float, optional
+        sigma_a step size. The default is 0.05.
 
     Returns
     -------
-    distributions : TYPE
-        DESCRIPTION.
+    distributions : list of dicts
+        Parameters for interaction distributions - [{'mu_a':mu_min,'sigma_a':std_min},
+                                                    {'mu_a':mu_min,'sigma_a':std_min+std_step},...,
+                                                    {'mu_a':mu_min+mu_step,'sigma_a':std_min},...,
+                                                    {'mu_a':mu_max,'sigma_a':std_max}]
 
     '''
-     
+    
+    # Extract min. mean interaction strength
     mu_min = mu_maxmin[0]
+    # Extract max. mean interaction strength
     mu_max = mu_maxmin[1]
     
+    # Extract min. standard deviation in interaction strength
     std_min = std_maxmin[0]
+    # Extract max. standard deviation in interaction strength
     std_max = std_maxmin[1]
     
+    # Generate range of mean interaction strengths
     mu_range = np.arange(mu_min,mu_max,mu_step)
+    # Generate range of standard deviations in interaction strengths
     std_range = np.arange(std_min,std_max,std_step)
 
+    # Generate dictionary of interaction distribution parameters sets
     mu_rep = np.repeat(mu_range,len(std_range))
     std_rep = np.tile(std_range,len(mu_range))
     
@@ -1457,48 +1386,183 @@ def mean_std_deviation(data):
 
 def find_period_ode_system(ode_object,t_start,extinct_thresh=1e-4,dt=10):
     
+    '''
+    
+    Find the periodicity of all species population dynamics in a community.
+    
+    This function was created to idenitfy the max. period (max_period) of 'chaotic-like
+    communities'. In gLV_lyapunov_exponent(), dt = max_period to identifying whether
+    the chaotic-like communities were actually chaotic (max_lyapunov_exponent > 0),
+    or oscillating (max_lyapunov_exponent = 0).
+    
+    Parameters
+    ----------
+    ode_object : gLV.ode_sol attribute or community.ODE_sols['lineage x']. scipy.integrate object.
+        ODE simulations.
+    t_start : float
+        The starting time to check for periodicity. Function looks for periodicity
+        in ode_object.t[np.where(ode_object.t >= t_start)[0]:]
+    extinct_thresh : float, optional
+        Extinction threshold. The default is 1e-4.
+    dt : float, optional
+        Time step, used to discretise ODE solver times. The default is 10.
+
+    Returns
+    -------
+    periods : list
+        List of max. periods of species dynamics. If a species' dynamics are not 
+        periodic, then np.nan is returned.
+
+    '''
+    # Discretise time steps from ODE solver for desired time range. 
+    #   This is necessary for the fourier transform
     t_discretised = np.arange(t_start,ode_object.t[-1],dt)
-   
-    extant_species = np.where(np.any(ode_object.y[:,np.where(ode_object.t > t_start)[0]] > extinct_thresh,
-                                          axis = 1) == True)[0]
+    
+    # Identify extant/non-extinct species in desired time range.
+    extant_species = np.any(ode_object.y[:,np.where(ode_object.t >= t_start)[0]] > extinct_thresh,
+                                          axis = 1).nonzero()[0]
     
     def find_max_period_species(ode_object,t_start,t_discretised,dt,species):
         
-        interpolated_spec = np.interp(t_discretised,ode_object.t[np.where(ode_object.t > t_start)[0]],
+        '''
+        
+        Find the periodicity of a single species population dynamics.
+        
+        This is achieved by fourier transforming the data to find the frequency 
+        of population dynamics fluctuations, if the species has fluctuating and
+        periodic dynamics. Then the function identifies peaks in the fourier spectrum,
+        which correspond to frequencies in population dynamics oscillations.
+        The peak corresponding to the max. period/min. frequency is identified and
+        the max. period is returned.
+
+        Parameters
+        ----------
+        ode_object : gLV.ode_sol attribute or community.ODE_sols['lineage x']. scipy.integrate object.
+            ODE simulations.
+        t_start : float
+            The starting time to check for periodicity. Function looks for periodicity
+            in ode_object.t[np.where(ode_object.t >= t_start)[0]:]
+        t_discretised : np.array of floats
+            Discretised times from t_start to end of simulations (ode_object.t[-1]).
+            Time step = dt.
+        dt : float
+            Time step, used to discretise ODE solver times. The default is 10.
+        species : int
+            Index of species in ode_object.y.
+
+        Returns
+        -------
+        max_period : float or np.nan
+            The maximum periodicity of the species population dynamics, extracted
+            from the fourier transform. If the system is not periodic, returns np.nan.
+
+        '''
+        
+        # Interpolate species population dynamics, so that we have population dynamics
+        #   at t_start to end of simulations with fixed time step dt.
+        # Having population dynamics at regular time steps is necessary for the 
+        #   fourier transform.
+        interpolated_spec = np.interp(t_discretised,ode_object.t[np.where(ode_object.t >= t_start)[0]],
                                       ode_object.y[species,np.where(ode_object.t > t_start)[0]])
         
+        # Generate the fourier spectrum of the real value species population dynamics
+        #   (No complex values are included)
         fourier_spec = rfft(interpolated_spec)
+        # Remove negative frequencies
         normalised_fourier_spec = 2*np.abs(fourier_spec)/len(interpolated_spec)
-
+        
+        # Calculate the periods of species population dynamics.
         period = 1/rfftfreq(len(interpolated_spec), d=dt)
         
-        peak_ind, _ = find_peaks(normalised_fourier_spec[1:])
+        # Identify the peaks in the fourier spectrum, which correspond to frequencies
+        #   of oscillations.
+        # Remove first value in normalised_fourier_spectrum (this is standard).
+        peak_ind = find_normalised_peaks(normalised_fourier_spec[1:]) + 1
         
+        # If there are peaks in the fourier spectrum, so population dynamics are periodic
         if peak_ind.size > 0:
-            
-            prominences = peak_prominences(normalised_fourier_spec, peak_ind+1)[0]
-            normalised_prominences = prominences/(normalised_fourier_spec[peak_ind+1] - prominences)
-            peak_ind = peak_ind[normalised_prominences > 1]
     
-            try:
+            try: # Extract the max. period population dynamics.
                 
-                max_period = period[peak_ind[0]+1]
+                max_period = period[peak_ind[0]]
                 
-            except IndexError:
+            except IndexError: # If there is only one peak_ind value, which does
+            #   not correspond to a real peak. 
                 
-                max_period = np.nan
-                
+                max_period = np.nan # no peaks
+        
+        # If there are no peaks in the fourier spectrum
         else: 
             
-            max_period = np.nan
+            max_period = np.nan # no peaks
         
         return max_period
-
+    
+    # Calculate the max. period of all extant species in the community.
     periods = [find_max_period_species(ode_object,t_start,t_discretised,dt,species) for species in extant_species]
     
     return periods
+
+def find_normalised_peaks(data):
     
+    '''
+    
+    Find peaks in data, normalised by relative peak prominence. Uses functions
+    from scipy.signal
+
+    Parameters
+    ----------
+    data : np.array of floats or ints
+        Data to identify peaks in.
+
+    Returns
+    -------
+    peak_ind or np.nan
+        Indices in data where peaks are present. Returns np.nan if no peaks are present.
+
+    '''
+    
+    # Identify indexes of peaks using scipy.signal.find_peaks
+    peak_ind, _ = find_peaks(data)
+    
+    # If peaks are present
+    if peak_ind.size > 0:
+        
+        # get the prominance of peaks compared to surrounding data (similar to peak amplitude).
+        prominences = peak_prominences(data, peak_ind)[0]
+        # get peak prominances relative to the data.
+        normalised_prominences = prominences/(data[peak_ind] - prominences)
+        # select peaks from normalised prominances > 1
+        peak_ind = peak_ind[normalised_prominences > 1]
+        
+    # If peaks are present after normalisation
+    if peak_ind.size > 0:
+        
+        return peak_ind # return indexes of peaks
+    
+    # If peaks are not present
+    else:
+          
+        return np.array([np.nan]) # return np.nan
+        
 def pickle_dump(filename,data):
+    
+    '''
+    
+    Pickle data.
+
+    Parameters
+    ----------
+    filename : string
+        Pickle file name. Should end with .pkl
+    data : any
+        Data to pickle.
+
+    Returns
+    -------
+    None.
+
+    '''
     
     with open(filename, 'wb') as fp:
         
